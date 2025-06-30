@@ -57,10 +57,55 @@
   font-weight: 600;
 }
 
+/* Sheet Section Styles */
+.sheet-section {
+  margin-bottom: 3rem;
+  padding: 1.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.sheet-section h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: #374151;
+  font-weight: 600;
+  text-align: left;
+}
+
+.sheet-info {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin-bottom: 1rem;
+  text-align: left;
+  font-style: italic;
+}
+
+.debug-info {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.debug-info summary {
+  cursor: pointer;
+  padding: 0.5rem;
+  background: #f3f4f6;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.debug-info p {
+  margin: 0.25rem 0;
+  padding-left: 1rem;
+}
+
 .table-container {
   overflow-x: auto;
-  margin: 0 -2rem;
-  padding: 0 2rem;
+  margin: 0 -1.5rem;
+  padding: 0 1.5rem;
   border-radius: 8px;
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
 }
@@ -128,7 +173,8 @@
   font-size: 0.9rem;
 }
 
-.goodreads-link {
+.goodreads-link,
+.external-link {
   color: #646cff;
   text-decoration: none;
   font-size: 0.875rem;
@@ -139,7 +185,8 @@
   display: inline-block;
 }
 
-.goodreads-link:hover {
+.goodreads-link:hover,
+.external-link:hover {
   background-color: #646cff;
   color: white;
   text-decoration: none;
@@ -156,6 +203,28 @@
 
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
+  .sheet-section {
+    background: #1f2937;
+    border-color: #374151;
+  }
+  
+  .sheet-section h3 {
+    color: #f9fafb;
+  }
+  
+  .sheet-info {
+    color: #9ca3af;
+  }
+  
+  .debug-info {
+    color: #6b7280;
+  }
+  
+  .debug-info summary {
+    background: #374151;
+    color: #f9fafb;
+  }
+  
   .highlights-table {
     background: #1f2937;
     color: #f9fafb;
@@ -186,6 +255,11 @@
 
 /* Responsive design */
 @media (max-width: 768px) {
+  .sheet-section {
+    padding: 1rem;
+    margin-bottom: 2rem;
+  }
+  
   .table-container {
     margin: 0 -1rem;
     padding: 0 1rem;
@@ -212,6 +286,14 @@
 }
 
 @media (max-width: 480px) {
+  .sheet-section {
+    padding: 0.75rem;
+  }
+  
+  .sheet-section h3 {
+    font-size: 1.25rem;
+  }
+  
   .highlights-table {
     font-size: 0.875rem;
   }

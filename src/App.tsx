@@ -1,20 +1,17 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 
-interface BookHighlight {
-  book_id: string;
-  title: string;
-  author: string;
-  genre: string;
-  publication_year: string;
-  cover_image: string;
-  goodreads_link: string;
-  highlight: string;
+interface SheetData {
+  sheetId: string;
+  sheetName: string;
+  headers: string[];
+  rows: string[][];
+  error?: string;
 }
 
 function App() {
   const [count, setCount] = useState(0)
-  const [bookHighlights, setBookHighlights] = useState<BookHighlight[]>([])
+  const [sheetsData, setSheetsData] = useState<SheetData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,58 +19,111 @@ function App() {
     const fetchSpreadsheetData = async () => {
       try {
         setLoading(true)
-        // Convert Google Sheets URL to CSV export URL
         const spreadsheetId = '1Hwu1Dk8RBD5ospxLfKt_L4HO0NO_KRL-S3znt28E814'
-        const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`
         
-        const response = await fetch(csvUrl)
-        if (!response.ok) {
-          throw new Error('Failed to fetch spreadsheet data')
+        // Define sheets with their IDs and names
+        const sheets = [
+          { id: '933538954', name: 'books and highlights' },
+          { id: '79276341', name: 'books' },
+          { id: '1041618944', name: 'highlights' }
+        ]
+        
+        const parseCSVLine = (line: string): string[] => {
+          const result: string[] = []
+          let current = ''
+          let inQuotes = false
+          
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i]
+            const nextChar = line[i + 1]
+            
+            if (char === '"') {
+              if (inQuotes && nextChar === '"') {
+                // Escaped quote
+                current += '"'
+                i++ // Skip next quote
+              } else {
+                // Toggle quote state
+                inQuotes = !inQuotes
+              }
+            } else if (char === ',' && !inQuotes) {
+              // End of field
+              result.push(current.trim())
+              current = ''
+            } else {
+              current += char
+            }
+          }
+          
+          // Add the last field
+          result.push(current.trim())
+          return result
         }
         
-        const csvText = await response.text()
-        const lines = csvText.split('\n')
-        const headers = lines[0].split(',').map(header => header.replace(/"/g, '').trim())
-        
-        const data: BookHighlight[] = []
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim()
-          if (line) {
-            const values = []
-            let currentValue = ''
-            let inQuotes = false
+        const fetchSheetData = async (sheetId: string, sheetName: string): Promise<SheetData> => {
+          try {
+            const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?gid=${sheetId}&format=csv#gid=${sheetId}`
             
-            for (let j = 0; j < line.length; j++) {
-              const char = line[j]
-              if (char === '"' && (j === 0 || line[j-1] === ',')) {
-                inQuotes = true
-              } else if (char === '"' && inQuotes && (j === line.length - 1 || line[j+1] === ',')) {
-                inQuotes = false
-              } else if (char === ',' && !inQuotes) {
-                values.push(currentValue.trim())
-                currentValue = ''
-              } else {
-                currentValue += char
+            const response = await fetch(csvUrl)
+            if (!response.ok) {
+              throw new Error(`Failed to fetch data for sheet: ${sheetName} (Status: ${response.status})`)
+            }
+            
+            const csvText = await response.text()
+            const lines = csvText.split('\n').filter(line => line.trim() !== '')
+            
+            if (lines.length === 0) {
+              return { sheetId, sheetName, headers: [], rows: [] }
+            }
+            
+            // Parse headers from first row
+            const headers = parseCSVLine(lines[0]).map(header => 
+              header.replace(/^"|"$/g, '').trim()
+            ).filter(header => header !== '')
+            
+            if (headers.length === 0) {
+              return { sheetId, sheetName, headers: [], rows: [] }
+            }
+            
+            // Parse data rows
+            const rows: string[][] = []
+            for (let i = 1; i < lines.length; i++) {
+              const line = lines[i].trim()
+              if (line) {
+                const parsedRow = parseCSVLine(line).map(cell => 
+                  cell.replace(/^"|"$/g, '').trim()
+                )
+                
+                // Only include rows that have at least one non-empty cell
+                if (parsedRow.some(cell => cell !== '')) {
+                  // Ensure row has same number of columns as headers
+                  while (parsedRow.length < headers.length) {
+                    parsedRow.push('')
+                  }
+                  rows.push(parsedRow.slice(0, headers.length))
+                }
               }
             }
-            values.push(currentValue.trim())
             
-            if (values.length >= 8 && values[0]) {
-              data.push({
-                book_id: values[0] || '',
-                title: values[1] || '',
-                author: values[2] || '',
-                genre: values[3] || '',
-                publication_year: values[4] || '',
-                cover_image: values[5] || '',
-                goodreads_link: values[6] || '',
-                highlight: values[7] || ''
-              })
+            return { sheetId, sheetName, headers, rows }
+          } catch (err) {
+            console.error(`Error fetching sheet ${sheetName}:`, err)
+            return { 
+              sheetId, 
+              sheetName, 
+              headers: [],
+              rows: [],
+              error: `Failed to load ${sheetName}: ${err instanceof Error ? err.message : 'Unknown error'}` 
             }
           }
         }
         
-        setBookHighlights(data)
+        // Fetch all sheets in parallel
+        const allSheetsData = await Promise.all(
+          sheets.map(sheet => fetchSheetData(sheet.id, sheet.name))
+        )
+        
+        setSheetsData(allSheetsData)
         setError(null)
       } catch (err) {
         setError('Failed to load book highlights data')
@@ -85,6 +135,110 @@ function App() {
 
     fetchSpreadsheetData()
   }, [])
+
+  const renderSheetTable = (sheetData: SheetData) => {
+    if (sheetData.error) {
+      return (
+        <div key={sheetData.sheetId} className="sheet-section">
+          <h3>{sheetData.sheetName}</h3>
+          <p className="error">Error: {sheetData.error}</p>
+        </div>
+      )
+    }
+
+    if (sheetData.headers.length === 0 || sheetData.rows.length === 0) {
+      return (
+        <div key={sheetData.sheetId} className="sheet-section">
+          <h3>{sheetData.sheetName}</h3>
+          <p>No data found in this sheet.</p>
+          <details className="debug-info">
+            <summary>Debug Info</summary>
+            <p>Headers: {sheetData.headers.length}</p>
+            <p>Rows: {sheetData.rows.length}</p>
+          </details>
+        </div>
+      )
+    }
+
+    return (
+      <div key={sheetData.sheetId} className="sheet-section">
+        <h3>{sheetData.sheetName}</h3>
+        <p className="sheet-info">
+          {sheetData.rows.length} row{sheetData.rows.length !== 1 ? 's' : ''} found
+          • {sheetData.headers.length} column{sheetData.headers.length !== 1 ? 's' : ''}
+        </p>
+        <div className="table-container">
+          <table className="highlights-table">
+            <thead>
+              <tr>
+                {sheetData.headers.map((header, index) => (
+                  <th key={`${sheetData.sheetId}-header-${index}`}>
+                    {header || `Column ${index + 1}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sheetData.rows.map((row, rowIndex) => (
+                <tr key={`${sheetData.sheetId}-row-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => {
+                    const header = sheetData.headers[cellIndex]?.toLowerCase() || ''
+                    
+                    // Special handling for different cell types
+                    if (header.includes('cover') && cell && cell.startsWith('http')) {
+                      return (
+                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`}>
+                          <img 
+                            src={cell} 
+                            alt="Book cover"
+                            className="book-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none'
+                            }}
+                          />
+                        </td>
+                      )
+                    } else if (header.includes('link') && cell && cell.startsWith('http')) {
+                      return (
+                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`}>
+                          <a 
+                            href={cell} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="external-link"
+                          >
+                            View Link
+                          </a>
+                        </td>
+                      )
+                    } else if (header.includes('highlight') || header.includes('quote')) {
+                      return (
+                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`} className="highlight-cell">
+                          "{cell}"
+                        </td>
+                      )
+                    } else if (header.includes('title')) {
+                      return (
+                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`} className="title-cell">
+                          {cell}
+                        </td>
+                      )
+                    } else {
+                      return (
+                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`}>
+                          {cell}
+                        </td>
+                      )
+                    }
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -100,67 +254,19 @@ function App() {
 
       <div className="book-highlights-section">
         <h2>My Book Highlights</h2>
-        {loading && <p>Loading book highlights...</p>}
+        {loading && <p>Loading book highlights from all sheets...</p>}
         {error && <p className="error">Error: {error}</p>}
         
-        {!loading && !error && bookHighlights.length > 0 && (
-          <div className="table-container">
-            <table className="highlights-table">
-              <thead>
-                <tr>
-                  <th>Cover</th>
-                  <th>Title</th>
-                  <th>Author</th>
-                  <th>Genre</th>
-                  <th>Year</th>
-                  <th>Highlight</th>
-                  <th>Goodreads</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookHighlights.map((book, index) => (
-                  <tr key={`${book.book_id}-${index}`}>
-                    <td>
-                      {book.cover_image && (
-                        <img 
-                          src={book.cover_image} 
-                          alt={`${book.title} cover`}
-                          className="book-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                          }}
-                        />
-                      )}
-                    </td>
-                    <td className="title-cell">{book.title}</td>
-                    <td>{book.author}</td>
-                    <td>{book.genre}</td>
-                    <td>{book.publication_year}</td>
-                    <td className="highlight-cell">"{book.highlight}"</td>
-                    <td>
-                      {book.goodreads_link && (
-                        <a 
-                          href={book.goodreads_link} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="goodreads-link"
-                        >
-                          View on Goodreads
-                        </a>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {!loading && !error && (
+          <>
+            {sheetsData.map(sheetData => renderSheetTable(sheetData))}
+          </>
         )}
         
-        {!loading && !error && bookHighlights.length === 0 && (
+        {!loading && !error && sheetsData.length === 0 && (
           <p>No book highlights found.</p>
         )}
       </div>
-
     </>
   )
 }
