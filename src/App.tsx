@@ -9,11 +9,32 @@ interface SheetData {
   error?: string;
 }
 
+interface Book {
+  book_id: string;
+  title: string;
+  author: string;
+  genre: string;
+  publication_year: string;
+  cover_image: string;
+  goodreads_link: string;
+}
+
+interface Highlight {
+  book_id: string;
+  highlight: string;
+  [key: string]: string; // Allow for additional columns
+}
+
 function App() {
-  const [count, setCount] = useState(0)
   const [sheetsData, setSheetsData] = useState<SheetData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null)
+  const [sidePanelOpen, setSidePanelOpen] = useState(false)
+
+  // Derived data
+  const booksData = sheetsData.find(sheet => sheet.sheetName === 'books')
+  const highlightsData = sheetsData.find(sheet => sheet.sheetName === 'highlights')
 
   useEffect(() => {
     const fetchSpreadsheetData = async () => {
@@ -23,7 +44,6 @@ function App() {
         
         // Define sheets with their IDs and names
         const sheets = [
-          { id: '933538954', name: 'books and highlights' },
           { id: '79276341', name: 'books' },
           { id: '1041618944', name: 'highlights' }
         ]
@@ -136,138 +156,198 @@ function App() {
     fetchSpreadsheetData()
   }, [])
 
-  const renderSheetTable = (sheetData: SheetData) => {
-    if (sheetData.error) {
-      return (
-        <div key={sheetData.sheetId} className="sheet-section">
-          <h3>{sheetData.sheetName}</h3>
-          <p className="error">Error: {sheetData.error}</p>
-        </div>
-      )
-    }
+  const parseBooks = (sheetData: SheetData): Book[] => {
+    if (!sheetData || sheetData.error || sheetData.rows.length === 0) return []
+    
+    return sheetData.rows.map(row => {
+      const book: Book = {
+        book_id: '',
+        title: '',
+        author: '',
+        genre: '',
+        publication_year: '',
+        cover_image: '',
+        goodreads_link: ''
+      }
+      
+      sheetData.headers.forEach((header, index) => {
+        const value = row[index] || ''
+        const headerLower = header.toLowerCase()
+        
+        if (headerLower.includes('book_id') || headerLower.includes('id')) {
+          book.book_id = value
+        } else if (headerLower.includes('title')) {
+          book.title = value
+        } else if (headerLower.includes('author')) {
+          book.author = value
+        } else if (headerLower.includes('genre')) {
+          book.genre = value
+        } else if (headerLower.includes('year') || headerLower.includes('publication')) {
+          book.publication_year = value
+        } else if (headerLower.includes('cover')) {
+          book.cover_image = value
+        } else if (headerLower.includes('goodreads') || headerLower.includes('link')) {
+          book.goodreads_link = value
+        }
+      })
+      
+      return book
+    }).filter(book => book.book_id) // Only include books with an ID
+  }
 
-    if (sheetData.headers.length === 0 || sheetData.rows.length === 0) {
-      return (
-        <div key={sheetData.sheetId} className="sheet-section">
-          <h3>{sheetData.sheetName}</h3>
-          <p>No data found in this sheet.</p>
-          <details className="debug-info">
-            <summary>Debug Info</summary>
-            <p>Headers: {sheetData.headers.length}</p>
-            <p>Rows: {sheetData.rows.length}</p>
-          </details>
-        </div>
-      )
-    }
+  const parseHighlights = (sheetData: SheetData): Highlight[] => {
+    if (!sheetData || sheetData.error || sheetData.rows.length === 0) return []
+    
+    return sheetData.rows.map(row => {
+      const highlight: Highlight = {
+        book_id: '',
+        highlight: ''
+      }
+      
+      sheetData.headers.forEach((header, index) => {
+        const value = row[index] || ''
+        const headerLower = header.toLowerCase()
+        
+        if (headerLower.includes('book_id') || headerLower.includes('id')) {
+          highlight.book_id = value
+        } else if (headerLower.includes('highlight') || headerLower.includes('quote')) {
+          highlight.highlight = value
+        }
+        
+        // Store all fields for flexibility
+        highlight[header] = value
+      })
+      
+      return highlight
+    }).filter(highlight => highlight.book_id && highlight.highlight) // Only include valid highlights
+  }
 
+  const books = booksData ? parseBooks(booksData) : []
+  const highlights = highlightsData ? parseHighlights(highlightsData) : []
+
+  const getHighlightsForBook = (bookId: string): Highlight[] => {
+    return highlights.filter(highlight => highlight.book_id === bookId)
+  }
+
+  const renderBookCover = (book: Book, className: string = '') => {
     return (
-      <div key={sheetData.sheetId} className="sheet-section">
-        <h3>{sheetData.sheetName}</h3>
-        <p className="sheet-info">
-          {sheetData.rows.length} row{sheetData.rows.length !== 1 ? 's' : ''} found
-          • {sheetData.headers.length} column{sheetData.headers.length !== 1 ? 's' : ''}
-        </p>
-        <div className="table-container">
-          <table className="highlights-table">
-            <thead>
-              <tr>
-                {sheetData.headers.map((header, index) => (
-                  <th key={`${sheetData.sheetId}-header-${index}`}>
-                    {header || `Column ${index + 1}`}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sheetData.rows.map((row, rowIndex) => (
-                <tr key={`${sheetData.sheetId}-row-${rowIndex}`}>
-                  {row.map((cell, cellIndex) => {
-                    const header = sheetData.headers[cellIndex]?.toLowerCase() || ''
-                    
-                    // Special handling for different cell types
-                    if (header.includes('cover') && cell && cell.startsWith('http')) {
-                      return (
-                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`}>
-                          <img 
-                            src={cell} 
-                            alt="Book cover"
-                            className="book-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none'
-                            }}
-                          />
-                        </td>
-                      )
-                    } else if (header.includes('link') && cell && cell.startsWith('http')) {
-                      return (
-                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`}>
-                          <a 
-                            href={cell} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="external-link"
-                          >
-                            View Link
-                          </a>
-                        </td>
-                      )
-                    } else if (header.includes('highlight') || header.includes('quote')) {
-                      return (
-                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`} className="highlight-cell">
-                          "{cell}"
-                        </td>
-                      )
-                    } else if (header.includes('title')) {
-                      return (
-                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`} className="title-cell">
-                          {cell}
-                        </td>
-                      )
-                    } else {
-                      return (
-                        <td key={`${sheetData.sheetId}-cell-${rowIndex}-${cellIndex}`}>
-                          {cell}
-                        </td>
-                      )
-                    }
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className={`book-cover-container ${className}`}>
+        {book.cover_image ? (
+          <img 
+            src={book.cover_image} 
+            alt={`${book.title} cover`}
+            className="book-cover-image"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none'
+              e.currentTarget.nextElementSibling?.classList.remove('hidden')
+            }}
+          />
+        ) : null}
+        <div className={`book-cover-placeholder ${book.cover_image ? 'hidden' : ''}`}>
+          <span>{book.title}</span>
         </div>
       </div>
     )
   }
 
-  return (
-    <>
-      <h1>Book Highlights Collection</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
+  const handleBookClick = (book: Book) => {
+    setSelectedBook(book)
+    setSidePanelOpen(true)
+  }
 
-      <div className="book-highlights-section">
-        <h2>My Book Highlights</h2>
-        {loading && <p>Loading book highlights from all sheets...</p>}
+  const closeSidePanel = () => {
+    setSidePanelOpen(false)
+    setSelectedBook(null)
+  }
+
+  const renderBookCard = (book: Book) => (
+    <div 
+      key={book.book_id} 
+      id={book.book_id}
+      className="book-card"
+      onClick={() => handleBookClick(book)}
+    >
+      {renderBookCover(book)}
+      <div className="book-card-info">
+        <h3 className="book-card-title">{book.title}</h3>
+        <p className="book-card-author">{book.author}</p>
+        <p className="book-card-year">{book.publication_year}</p>
+      </div>
+    </div>
+  )
+
+  const renderSidePanel = () => (
+    <>
+      {sidePanelOpen && <div className="overlay" onClick={closeSidePanel} />}
+      <div className={`side-panel ${sidePanelOpen ? 'open' : ''}`}>
+        {selectedBook && (
+          <>
+            <div className="side-panel-header">
+              <button className="close-button" onClick={closeSidePanel}>×</button>
+            </div>
+            <div className="side-panel-content">
+              <div className="book-details">
+                {renderBookCover(selectedBook)}
+                <div className="book-details-info">
+                  <h2>{selectedBook.title}</h2>
+                  <p className="book-author">by {selectedBook.author}</p>
+                  <p className="book-year">{selectedBook.publication_year}</p>
+                  {selectedBook.genre && <p className="book-genre">Genre: {selectedBook.genre}</p>}
+                  {selectedBook.goodreads_link && (
+                    <a 
+                      href={selectedBook.goodreads_link} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="goodreads-link"
+                    >
+                      View on Goodreads
+                    </a>
+                  )}
+                </div>
+              </div>
+              
+              <div className="highlights-section">
+                <h3>Highlights</h3>
+                {getHighlightsForBook(selectedBook.book_id).length > 0 ? (
+                  <div className="highlights-list">
+                    {getHighlightsForBook(selectedBook.book_id).map((highlight, index) => (
+                      <div key={index} className="highlight-item">
+                        <blockquote>"{highlight.highlight}"</blockquote>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-highlights">No highlights found for this book.</p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  )
+
+  return (
+    <div className="app">
+      <div className="main-content">
+        <h1 className="page-title">Book Highlights Collection</h1>
+        
+        {loading && <p className="loading">Loading books...</p>}
         {error && <p className="error">Error: {error}</p>}
         
         {!loading && !error && (
           <>
-            {sheetsData.map(sheetData => renderSheetTable(sheetData))}
+            <div className="books-grid">
+              {books.map(book => renderBookCard(book))}
+            </div>
+            {books.length === 0 && (
+              <p className="no-books">No books found.</p>
+            )}
           </>
         )}
-        
-        {!loading && !error && sheetsData.length === 0 && (
-          <p>No book highlights found.</p>
-        )}
+        {renderSidePanel()}
       </div>
-    </>
+    </div>
   )
 }
 
